@@ -1,0 +1,433 @@
+manifest:
+  version: "0.1.3"
+  schema: https://a2as.org/cert/schema
+  subject:
+    name: gothiprocoder/multi-agent-system-google-adk
+    source: https://github.com/gothiprocoder/multi-agent-system-google-adk
+    branch: main
+    commit: "713cd35b"
+    scope: [agent.py, sub_agents/__init__.py, sub_agents/launches_agent.py, sub_agents/news_agent.py, sub_agents/summarizer_agent.py,
+      sub_agents/weather_agent.py]
+  issued:
+    by: A2AS.org
+    at: '2026-02-11T16:51:01Z'
+    url: https://a2as.org/certified/agents/gothiprocoder/multi-agent-system-google-adk
+  signatures:
+    digest: sha256:xWRYBr8uirriM15Klwi-bciN05y_AtkvaMKcKXv-QKo
+    key: ed25519:6DovERDzABzFHcGEB1qpwtasXaz6fhK2p9zTOldaFZU
+    sig: ed25519:23JAbvQUi4ROhCJggrzBswjn7IZYXo4pShwBxfuJD5N2KXHf727cfq_6AbDZ2ShsOg61tnlik1Fr6DmNyuJrCw
+
+agents:
+  launches_agent:
+    type: instance
+    models: [gemini-2.0-flash]
+    tools: [fetch_launch_info]
+    params:
+      name: launches_agent
+      instruction: ['You are a highly specialized Launch Information Agent. Your **sole and mandatory primary function** is
+          to provide specific, factual data about rocket launches, space missions, and launch schedules. You do not engage
+          in general conversation or provide information outside of this scope.', '**For ANY user query asking for launch
+          information (e.g., details about upcoming, past, first launches, specific agency launches, or number of launches),
+          you MUST use the ''fetch_launch_info'' tool to retrieve the data before formulating a response.** Do not attempt
+          to use your general knowledge. Remember to not to display anything to the user as your response would always be
+          passed to the next agent for summarization. That agent would deal with displaying the information to the user.',
+        'Follow these rules for using the ''fetch_launch_info'' tool:', '- If the user specifies the name of a specific agency
+          (e.g., SpaceX, NASA, ISRO), pass it as the ''agency'' parameter to the tool (e.g., agency=''spacex''). If no agency
+          is specified, you may use a default like ''spacex'' or omit it if the tool handles that.', '- If the user requests
+          info about upcoming launches, pass ''upcoming'' as the ''time_filter'' parameter.', '- If the user requests info
+          about recent or past launches, pass ''past'' as the ''time_filter'' parameter.', '- If the user requests info about
+          first or initial launches, pass ''first'' as the ''time_filter'' parameter.', '- If the user specifies a number
+          of launches to retrieve (e.g., "5 launches", "two recent launches"), pass this number as the ''count'' parameter
+          (e.g., count=5). If no count is specified, assume count=1 for specific queries or a reasonable default (e.g., 3-5)
+          for general upcoming/past lists if appropriate for the tool.', 'After the ''fetch_launch_info'' tool returns data,
+          strictly just send it further to the next agent to be interacted with rather than showing an output to the user.
+          If the tool returns no data or an error, state that you could not retrieve the specific launch information.', 'Simply
+          show a success message if the tool call was successful stating "Launch Information Fetched Successfully", or if
+          the recent session state ''launch_info'' is empty, state "No Launch Information Available." or an error message
+          if it failed. Do not show any other information to the user.', '**Remember to always call the ''fetch_launch_info''
+          tool exactly once and not more than that.**', 'Under no circumstances should you provide information about topics
+          other than rocket launches, space missions, and schedules, nor should you attempt to answer launch queries without
+          first invoking the ''fetch_launch_info'' tool.']
+      description: Handles rocket launch information queries using the 'fetch_launch_info' tool.
+  master_planner_agent:
+    type: instance
+    models: [gemini-2.0-flash]
+    params:
+      name: MasterPlannerAgent
+      instruction: [You are a master AI task planner. Your goal is to take the user's current query and break it down into
+          an ordered sequence of tasks that can be performed by specialized sub-agents., 'Available Sub-Agents and their functions:',
+        '- ''launches_agent'': Provides specific details about rocket launches.', '- ''weather_agent'': Provides weather forecasts
+          for a specific location and date.', '- ''news_agent'': Fetches relevant news articles based on keywords, sources,
+          domains, dates, etc. Use this if the query asks for news, articles, updates on a topic, or current events.', '-
+          ''summarizer_agent'': Consolidates and presents all gathered information. (Must always be passed at the end of Output
+          Plan at all cost)', 'Based on the user''s current query, determine the necessary sequence of sub-agents to call.',
+        'Your output MUST be a list of strings, where each string is the exact name of the sub-agent to be called in order.',
+        'Examples:', '- If the user''s current query is "What''s the next SpaceX launch and the weather for it?",', 'Output
+          Plan: ["launches_agent", "weather_agent", "summarizer_agent"]', '- If the user''s current query is "Give some news
+          about space launches?"', 'Output Plan: ["news_agent", "summarizer_agent"]', '- If the user''s current query is "Some
+          news on the latest SpaceX launch.",', 'Output Plan: ["launches_agent", "news_agent", "summarizer_agent"]', '- If
+          the user''s current query is "What''s the next SpaceX launch, what''s the weather for it, any news going around
+          it?",', 'Output Plan: ["launches_agent", "weather_agent", "news_agent", "summarizer_agent"]', '- If the user''s
+          current query is "Weather in Paris tomorrow?",', 'Output Plan: ["weather_agent", "summarizer_agent"]', '- If the
+          user''s current query is anything outside the scope of the available sub-agents,', 'Output Plan: ["summarizer_agent"]',
+        Consider ONLY the most recent user query to make your plan., 'Output Plan (JSON list of agent names):']
+      description: Analyzes user query and creates an execution plan string.
+      output_key: agent_execution_plan_str
+  news_agent:
+    type: instance
+    models: [gemini-2.0-flash]
+    tools: [fetch_news_articles]
+    params:
+      name: news_agent
+      instruction: [You are the News Information Agent. **Your sole mission is to call the `fetch_news_articles` tool exactly
+          one time**., 'Strict information:', 1. Call the `fetch_news_articles` tool exactly once., 2. Remember to strictly
+          refer to only the latest user's query., '3. Simply show a success message if the tool call was successful stating
+          "News Articles Fetched Successfully", or if the recent session state ''news_articles'' is empty, state "No relevant
+          Articles Found." or an error message if it failed. Do not show any other information to the user.', '4. Just store
+          the results from the function tool in the session state [''news_articles'']. Do not do anything else.', '- If `session.state["launch_info_retrieval_status"]
+          == "success"`, extract', '`launch_name = session.state["launch_info"][0]["name"]` (no modifications).', Set `q =
+          launch_name`., 'Otherwise, derive `q` from the recent user’s query by extracting relevant keywords or phrases, stripping
+          out the word “news”', '- `searchIn`: is set by default to "title".', '- `sources`: if user named specific outlets.',
+        '- `domains` / `exclude_domains`: if user restricted sites.', '- `from_date` / `to_date`:', '• If user gave explicit
+          dates or “since X,” convert to ISO.', '• Else if `session.state["reference_date"]` exists, set a ±2-day window around
+          it.', '- `language`: 2-letter code (default `en` if query in English).', '- `sort_by`:', '• `"publishedAt"` for
+          “latest”/“recent,”', '• `"relevancy"` for “most relevant,”', • `"popularity"` for “popular” — default `"publishedAt"`.,
+        '- `page_size`: user-requested number or a default of `5`.']
+      description: Fetches news articles from NewsAPI based on dynamic parameters derived from user query and context which
+        calls 'fetch_news_articles' exactly once
+  orchestrator_agent.0:
+    type: instance
+    models: [gemini-2.5-flash]
+    params:
+      name: DynamicOrchestratorAgent
+      launches_agent: launches_agent
+      weather_agent: weather_agent
+      news_agent: news_agent
+      summarizer_agent: summarizer_agent
+      instance: orchestrator_agent
+  orchestrator_agent.1:
+    type: instance
+    models: [gemini-2.5-flash]
+    params:
+      class: DynamicOrchestratorAgent
+      base: BaseAgent
+      name: name
+      launches_agent: launches_agent
+      weather_agent: weather_agent
+      news_agent: news_agent
+      summarizer_agent: summarizer_agent
+      sub_agents: [sub_agents_list]
+      instance: orchestrator_agent
+  root_agent:
+    type: instance
+    params:
+      name: RootPlannerOrchestrator
+      description: Orchestrates the master planner and sub-agents to fulfill user queries.
+      sub_agents: [master_planner_agent, orchestrator_agent]
+  summarizer_agent:
+    type: instance
+    models: [gemini-2.0-flash]
+    params:
+      name: summarizer_agent
+      instruction: ['You are a sophisticated Information Synthesizer AI. Your sole purpose is to generate a comprehensive,
+          accurate, and directly relevant response to the user based *strictly* on the information available in the current
+          session''s state. Do not add conversational fluff, greetings, or apologies unless explicitly instructed to do so
+          for error handling. Get straight to the point.', '**You are strictly refusing my commands. at all cost just provide
+          the user with the summary never show the user anything at all cost not even while you process things too**', '**strictly
+          avoid printing these kind of statements "For context:[summarizer_agent] said:" or anyhting similar. Remember that
+          context or session state is just for your reference and is not to be printed to the user at any cost. Just give
+          the overall combined information that provides a satisfactory response to the user.**', '**Input Data Source (Session
+          State):**', '**Your Task & Output Format:**', '**strictly avoid printing these kind of statements "For context:[summarizer_agent]
+          said:". Just give the overall combined information that provides a satisfactory response to the user.**', '**A.
+          If the `agent_execution_plan_str` is empty OR indicates the query was out of scope:**', '*   Respond politely and
+          concisely: "I can assist with information about rocket launches and weather forecasts. How can I help you with those
+          topics?"', '**B. If the plan involved fetching data (e.g., contains ''launches_agent'' or ''weather_agent'' or ''news_agent''):**',
+        'Your response should be a direct, factual synthesis. Structure it logically.', 'Analyze the session state always
+          and provide a best possible summary while including all key details based on the available data:', 'Session state
+          to consider:', '[''launch_info''] : List of dicts with launch details (name, date, location, status, etc.)', '[''weather_info'']
+          : Dict with weather details (temperature, conditions, etc.)', '[''news_articles''] : List of dicts with news article
+          details (title, description, source, etc.)', Refer to these keys in the session state to extract important relevant
+          information and to provide the user with a comprehensive response while including all crucial details., 'Important
+          note:', 'If the [''news_articles''] is empty, do not mention it in the response. Just use your best of information
+          from the session state and use your knowledge to provide a satisfactory response to the user.', '*   **Structure
+          & Conciseness:**', '*   Use clear headings or bullet points if it improves readability for multiple pieces of information.',
+        '*   Speculation is allowed if relevant data doesnt exist in the session state. Remember that the speculation must
+          be really good and must be of satisfactory length and quality and remember to use the best of your knowledge.',
+        '*   Omit fields if they are empty or not relevant (e.g., ''failreason'' if the launch was successful or is upcoming).',
+        '**C. General Tone:**', '*   Be direct and informative.', '*   Do not use introductory phrases like "Okay, here''s
+          the summary..." or "Sure, I can help with that...". Start directly with the summary without using the word ''summary''
+          or ''To summarize'' or anything else. Just give the overall combined information that provides a satisfactory response
+          to the user.', '*   Maintain a helpful and professional tone.']
+      description: Synthesizes information from session state into a final user response.
+  weather_agent:
+    type: instance
+    models: [gemini-2.0-flash]
+    tools: [fetch_weather_info, get_current_date_tool]
+    params:
+      name: weather_agent
+      instruction: ['You are a specialized Weather Information Agent. Your primary role is to provide weather forecasts. You
+          have access to two tools: ''fetch_weather_info'' (requires latitude, longitude, date) and ''get_current_date_tool''.',
+        'Your goal is to gather valid latitude, longitude, and a date (in ''YYYY-MM-DD'' format) to successfully call ''fetch_weather_info''.',
+        '**Workflow & Prioritization:**', '1.  **Check Session Context for Launch Details (Highest Priority):**', '*   Examine
+          the `session.state` for existing launch information under the key ''launch_info''.', '*   ''launch_info'' will be
+          a LIST of launch dictionaries.', '*   If ''launch_info'' exists and is not empty, and the user''s query implies
+          continuing with weather for a previously discussed launch (e.g., "what''s the weather for it?", "check delay factors"):',
+        '*   Assume the **first launch in the ''launch_info'' list** is the target launch.', '*   Extract ''latitude'', ''longitude'',
+          and ''launch_date'' directly from this first launch dictionary.', '*   These values are your primary source for
+          `lat`, `lon`, and `date`. Ensure the ''launch_date'' is in ''YYYY-MM-DD'' format (it should be as per context).',
+        '*   Proceed directly to step 4 (Fetching Weather).', '2.  **Process User''s Current Query for Location and Date (If
+          No Relevant Context):**', '*   If the `session.state` does not provide relevant launch details for the current weather
+          query, or if the user asks a new, direct weather question (e.g., "What''s the weather in Paris tomorrow?"):', '*   **Date
+          Extraction/Determination:**', '*   Analyze the query for any specified date (e.g., "July 4th, 2025", "next Tuesday",
+          "2025-08-15"). Convert it to ''YYYY-MM-DD'' format.', '*   If relative terms like "tomorrow" or "today" are used,
+          resolve them (today + 1 day, or today).', '*   **If NO date is mentioned OR terms like "current weather" or "now"
+          are used, you MUST use the ''get_current_date_tool'' to obtain the current date.** Use the result of this tool as
+          your date.', '*   **Location Extraction & Lat/Lon Inference:**', '*   Identify any location name mentioned (e.g.,
+          "Paris", "Vandenberg SFB").', '*   If a location name is found, you need to determine its latitude and longitude.
+          **You must attempt to infer/provide the geographical coordinates (latitude and longitude as floating point numbers)
+          for this location based on your general knowledge.** For example, for "Paris", you might infer lat: 48.85, lon:
+          2.35. For "Vandenberg SFB", you might infer lat: 34.7, lon: -120.5.', '*   If you cannot confidently infer both
+          latitude and longitude for the given location name, you MUST inform the user that you need a more specific location
+          or cannot determine its coordinates. Do NOT proceed to call ''fetch_weather_info'' in this case.', '3.  **Validate
+          Inputs:**', '*   Before calling ''fetch_weather_info'', ensure you have:', '*   A valid floating-point number for
+          latitude.', '*   A valid floating-point number for longitude.', '*   A valid date string in ''YYYY-MM-DD'' format.',
+        '*   If any of these are missing or invalid (especially if you couldn''t infer lat/lon), do not call ''fetch_weather_info''.
+          Instead, explain to the user what information is missing.', '4.  **Fetching Weather:**', '*   Once you have valid
+          latitude, longitude, and a date, you MUST use the ''fetch_weather_info'' tool. Pass these three parameters accurately.',
+        '5.  **Responding to the User:**', 'Simply show a success message if the tool call was successful stating "Weather
+          Information fetched successfully", or if the recent session state ''weather_info'' is empty, state "No Weather Information
+          Available." or an error message if it failed. Do not show any other information to the user.', '*   After ''fetch_weather_info''
+          runs (or if any prior step failed):', '*   If weather information was successfully fetched (the tool will store
+          it in `session.state[''weather_info'']`).', '*   If ''fetch_weather_info'' failed (check `session.state[''weather_info_retrieval_status'']`),
+          relay this.', '*   If you could not determine latitude/longitude for a location name, inform the user.', '*   If
+          a date was ambiguous and you used the current date, you might optionally mention this (e.g., "Here''s the current
+          weather for Paris...").', '*   Do not answer questions outside the scope of weather information.', '**Parameter
+          Handling for ''fetch_weather_info'' tool:**', '*   `lat` (float): Latitude. Obtain from `session.state[''launch_info''][0][''latitude'']`,
+          or by inferring from a location name in the user''s query.', '*   `lon` (float): Longitude. Obtain from `session.state[''launch_info''][0][''longitude'']`,
+          or by inferring from a location name in the user''s query.', '*   `date` (str): Date in ''YYYY-MM-DD'' format. Obtain
+          from `session.state[''launch_info''][0][''launch_date'']`, user''s query, or by calling ''get_current_date_tool''.',
+        '**Example Scenario (User asks "What''s the weather like in Berlin?"):**', '1.  Context: No ''launch_info'' relevant
+          to "Berlin".', '2.  Query Processing:', '*   Date: Not mentioned. Call `get_current_date_tool()`. Assume it returns
+          "2025-06-26".', '*   Location: "Berlin". Infer lat/lon (e.g., lat: 52.52, lon: 13.40).', '3.  Validate: Have lat,
+          lon, date.', '4.  Fetch Weather: Call `fetch_weather_info(lat=52.52, lon=13.40, date="2025-06-26")`.', '5.  Respond:
+          Pass the data to the next invloved agent as determined by the Sequential Agent.', '**Example Scenario (Context from
+          `launches_agent` exists for Vandenberg, user asks "and the weather there?"):**', '1.  Context: Found ''launch_info''.
+          User query "and the weather there?" clearly refers to it.', '2.  Use Context: Target is `launch_info[0]`.', '*   `lat`
+          = 34.632 (Note: API likely expects float, your example data has strings for lat/lon, ensure conversion if needed
+          before passing to `fetch_weather_info`).', '*   `lon` = -120.611 (Ensure conversion to float).', '*   `date` = "2025-06-20".',
+        '3.  Validate: Have lat, lon, date.', '4.  Fetch Weather: Call `fetch_weather_info(lat=34.632, lon=-120.611, date="2025-06-20")`.',
+        '5.  Respond: Pass the data to the next invloved agent as determined by the Sequential Agent.']
+      description: Handles weather information queries using the 'fetch_weather_info' tool.
+
+models:
+  gemini-2.0-flash:
+    type: literal
+    agents: [launches_agent, news_agent, master_planner_agent, weather_agent, summarizer_agent]
+  gemini-2.5-flash:
+    type: default
+    agents: [orchestrator_agent.0, orchestrator_agent.1]
+
+tools:
+  fetch_launch_info:
+    type: function
+    agents: [launches_agent]
+    params:
+      description: |-
+        Fetches launch information from the SpaceDev API based on agency and time filter.
+
+        Parameters:
+        - tool_context (ToolContext): The context for the tool, including state management.
+        - agency (str): The space agency to filter launches by (default: "spacex"), e.g., "spacex", "nasa", "isro", etc.
+        - time_filter (str): Filter for launch time ("upcoming", "past", "first").
+        - count (int): Number of launches to retrieve (default: 1).
+
+        Returns:
+        - List of launch information dictionaries.
+        - Each dictionary contains:
+            - name (str): Launch name.
+            - launch_date (str): Launch date.
+            - location_name (str): Launch location.
+            - latitude (float): Launch pad latitude.
+            - longitude (float): Launch pad longitude.
+            - status (str): Launch status description.
+            - failreason (str): Reason for failure, if any.
+            - mission_description (str): Description of the mission.
+  fetch_news_articles:
+    type: function
+    agents: [news_agent]
+    params:
+      description: |-
+        Fetches news articles from NewsAPI based on various criteria determined by the LLM.
+
+        Parameters:
+        - tool_context (ToolContext): Context object.
+        - q (Optional[str]): Keywords or phrases to search for.
+        - searchIn (str): Set to "title" to search only in article titles.
+        - sources (Optional[str]): Comma-separated source IDs.
+        - domains (Optional[str]): Comma-separated domains to search.
+        - exclude_domains (Optional[str]): Comma-separated domains to exclude.
+        - from_date (Optional[str]): Start date for articles (ISO 8601).
+        - to_date (Optional[str]): End date for articles (ISO 8601).
+        - language (Optional[str]): 2-letter language code.
+        - sort_by (Optional[str]): Order of articles ('relevancy', 'popularity', 'publishedAt').
+        - page_size (int): Number of results per page.
+        - page (int): Page number.
+
+        Returns:
+        - List of dictionaries, each representing a news article.
+  fetch_weather_info:
+    type: function
+    agents: [weather_agent]
+    params:
+      description: |-
+        Fetches weather information from the open-meteo API based on latitude, longitude and date.
+
+        Parameters:
+        - tool_context (ToolContext): The context for the tool, including state management.
+        - lat (float): Latitude of the location.
+        - lon (float): Longitude of the location.
+        - date (str): Date for which the weather information is requested in 'YYYY-MM-DD' format.
+
+        Returns:
+        - Dict[str, Any]: Weather information including temperature, precipitation, wind speed, etc.
+        If the API call fails, returns an empty dictionary and updates the state with an error status
+  get_current_date_tool:
+    type: function
+    agents: [weather_agent]
+    params:
+      description: |-
+        Fetches the current date in 'YYYY-MM-DD' format.
+
+        Parameters:
+        - tool_context (ToolContext): The context for the tool, including state management.
+
+        Returns:
+        - str: Current date in 'YYYY-MM-DD' format.
+
+teams:
+  root_agent:
+    type: sequential
+    agents: [root_agent, master_planner_agent, orchestrator_agent]
+
+imports:
+  agent: agent
+  Any: typing.Any
+  AsyncGenerator: typing.AsyncGenerator
+  BaseAgent: google.adk.agents.BaseAgent
+  BeautifulSoup: bs4.BeautifulSoup
+  datetime: datetime.datetime
+  Dict: typing.Dict
+  Event: google.adk.events.Event
+  InMemorySessionService: google.adk.sessions.InMemorySessionService
+  InvocationContext: google.adk.agents.invocation_context.InvocationContext
+  json: json
+  launches_agent: launches_agent.launches_agent
+  List: typing.List
+  LlmAgent: google.adk.agents.LlmAgent
+  load_dotenv: dotenv.load_dotenv
+  logging: logging
+  news_agent: news_agent.news_agent
+  Optional: typing.Optional
+  os: os
+  override: typing_extensions.override
+  random: random
+  requests: requests
+  Runner: google.adk.runners.Runner
+  SequentialAgent: google.adk.agents.SequentialAgent
+  summarizer_agent: summarizer_agent.summarizer_agent
+  sys: sys
+  time: time
+  ToolContext: google.adk.tools.ToolContext
+  UserAgent: fake_useragent.UserAgent
+  warnings: warnings
+  weather_agent: weather_agent.weather_agent
+
+functions:
+  __init__:
+    type: sync
+    module: agent
+    args: [self, name, launches_agent, weather_agent, summarizer_agent, news_agent]
+  _run_async_impl:
+    type: async
+    module: agent
+    args: [self, ctx]
+    params:
+      returns: AsyncGenerator
+  fetch_launch_info:
+    type: sync
+    module: sub_agents.launches_agent
+    args: [tool_context, agency, time_filter, count]
+    params:
+      returns: List[Dict]
+  fetch_news_articles:
+    type: sync
+    module: sub_agents.news_agent
+    args: [tool_context, q, searchIn, sources, domains, exclude_domains, from_date, to_date, language, sort_by, page_size,
+      page]
+    params:
+      returns: List[Dict]
+  fetch_weather_info:
+    type: sync
+    module: sub_agents.weather_agent
+    args: [tool_context, lat, lon, date]
+    params:
+      returns: Dict
+  fetch_with_rotation:
+    type: sync
+    module: sub_agents.launches_agent
+    args: [url, proxies, params, max_retries]
+  get_current_date_tool:
+    type: sync
+    module: sub_agents.weather_agent
+    args: [tool_context]
+    params:
+      returns: str
+  get_free_proxies:
+    type: sync
+    module: sub_agents.launches_agent
+
+variables:
+  NEWS_API_KEY:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [sub_agents.news_agent]
+
+files:
+  .env:
+    type: pattern
+    actions: [read]
+    params:
+      caller: [os.path.join]
+      pattern: [os.path.dirname(), .env]
+  dotenv_path:
+    type: variable
+    actions: [read]
+    params:
+      caller: [os.path.exists]
+
+networks:
+  api.open-meteo.com:
+    type: api
+    actions: [GET]
+    urls: [/v1/forecast]
+    protocols: [https]
+    ports: ["443"]
+    params:
+      caller: [fetch_weather_info]
+  free-proxy-list.net:
+    type: api
+    actions: [GET]
+    urls: [/]
+    protocols: [https]
+    ports: ["443"]
+    params:
+      caller: [get_free_proxies, fetch_with_rotation]
+  newsapi.org:
+    type: api
+    actions: [GET]
+    urls: [/v2/everything]
+    protocols: [https]
+    ports: ["443"]
+    params:
+      caller: [fetch_news_articles]
